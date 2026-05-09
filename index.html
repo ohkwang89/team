@@ -68,10 +68,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Malgun Gothic','맑은 고딕
 .field input:focus,.field select:focus,.field textarea:focus{border-color:#378ADD}
 .field textarea{resize:vertical;min-height:52px}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
-.time-row{display:flex;align-items:center;gap:8px;margin-bottom:11px}
-.time-row label{font-size:11px;color:#888;font-weight:500;white-space:nowrap}
-.time-toggle{display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #e0e0e0;border-radius:8px;cursor:pointer;font-size:12px;color:#555;background:#fafafa;user-select:none}
+.time-toggle{display:flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid #e0e0e0;border-radius:8px;cursor:pointer;font-size:12px;color:#555;background:#fafafa;user-select:none;margin-bottom:11px}
 .time-toggle input[type=checkbox]{width:14px;height:14px;cursor:pointer;accent-color:#378ADD}
 .time-fields{display:none;margin-bottom:11px}
 .time-fields.show{display:block}
@@ -88,7 +85,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Malgun Gothic','맑은 고딕
 .spinner{width:28px;height:28px;border:3px solid #e0e0e0;border-top-color:#378ADD;border-radius:50%;animation:spin 0.7s linear infinite}
 .notice{font-size:11px;color:#aaa;margin-top:10px;padding:8px 12px;background:#fff;border-radius:8px;border:1px solid #e8e8e8;text-align:center}
 .team-badge{font-size:10px;padding:1px 6px;border-radius:4px;background:#FAEEDA;color:#854F0B;font-weight:500;margin-left:4px}
-.time-label{font-size:9px;color:#888;margin-top:1px}
 @media(max-width:600px){
   .app{padding:10px}
   .cal-day{min-height:64px;padding:4px}
@@ -142,7 +138,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Malgun Gothic','맑은 고딕
   <div class="notice">🔗 이 URL을 팀원들에게 공유하면 모두 같은 일정을 볼 수 있습니다. 일정은 Google Sheets에 실시간 저장됩니다.</div>
 </div>
 
-<!-- 일정 모달 -->
 <div class="modal-overlay" id="modal-overlay" onclick="closeModal()">
   <div class="modal" onclick="event.stopPropagation()">
     <h3 id="modal-title">일정 추가</h3>
@@ -161,19 +156,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Malgun Gothic','맑은 고딕
       <div class="field"><label>시작일</label><input type="date" id="f-start"></div>
       <div class="field"><label>종료일</label><input type="date" id="f-end"></div>
     </div>
-
-    <!-- 시간 설정 토글 -->
     <label class="time-toggle" onclick="toggleTime()">
       <input type="checkbox" id="f-use-time" onclick="event.stopPropagation();toggleTime()">
-      시간 설정 (미팅/보고 등 시간이 정해진 일정)
+      시간 설정 (미팅·보고 등 시간이 정해진 일정)
     </label>
     <div class="time-fields" id="time-fields">
-      <div class="two-col" style="margin-top:8px">
+      <div class="two-col">
         <div class="field"><label>시작 시간</label><input type="time" id="f-stime" value="09:00"></div>
         <div class="field"><label>종료 시간</label><input type="time" id="f-etime" value="10:00"></div>
       </div>
     </div>
-
     <div class="field"><label>메모 (선택)</label><textarea id="f-memo" placeholder="추가 내용"></textarea></div>
     <div class="modal-actions">
       <button class="btn-del" id="del-btn" style="display:none" onclick="deleteEvent()">삭제</button>
@@ -210,50 +202,55 @@ const MONTHS=['1월','2월','3월','4월','5월','6월','7월','8월','9월','10
 let curYear=new Date().getFullYear(), curMonth=new Date().getMonth();
 let events=[], editId=null, view='month';
 
-/* ── 시간 토글 ── */
+// 절대 겹치지 않는 고유 ID 생성
+function genId(){
+  return 'ev_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+}
+
 function toggleTime(){
   const cb=document.getElementById('f-use-time');
-  const fields=document.getElementById('time-fields');
-  fields.classList.toggle('show', cb.checked);
+  document.getElementById('time-fields').classList.toggle('show',cb.checked);
 }
 function onCatChange(){
   const cat=document.getElementById('f-cat').value;
-  const autoTime = cat==='meeting'||cat==='report';
+  const autoTime=cat==='meeting'||cat==='report';
   document.getElementById('f-use-time').checked=autoTime;
   document.getElementById('time-fields').classList.toggle('show',autoTime);
 }
 
-/* ── 동기화 상태 ── */
 function setSyncStatus(state,text){
   document.getElementById('sync-dot').className='sync-dot '+state;
   document.getElementById('sync-text').textContent=text;
 }
 
-/* ── API 호출 (jsonp 방식으로 CORS 완전 우회) ── */
 function apiCall(params){
   return new Promise((resolve,reject)=>{
-    const cbName='_cb'+Date.now();
+    const cbName='_cb'+Date.now()+'_'+Math.random().toString(36).slice(2,6);
     const script=document.createElement('script');
     const timeout=setTimeout(()=>{
       delete window[cbName];
-      document.body.removeChild(script);
+      if(script.parentNode) document.body.removeChild(script);
       reject(new Error('timeout'));
     },15000);
     window[cbName]=function(data){
       clearTimeout(timeout);
       delete window[cbName];
-      document.body.removeChild(script);
+      if(script.parentNode) document.body.removeChild(script);
       resolve(data);
     };
     const q=Object.entries({...params,callback:cbName})
-      .map(([k,v])=>encodeURIComponent(k)+'='+encodeURIComponent(v)).join('&');
+      .map(([k,v])=>encodeURIComponent(k)+'='+encodeURIComponent(String(v))).join('&');
     script.src=API_URL+'?'+q;
-    script.onerror=()=>{clearTimeout(timeout);delete window[cbName];document.body.removeChild(script);reject(new Error('network'));};
+    script.onerror=()=>{
+      clearTimeout(timeout);
+      delete window[cbName];
+      if(script.parentNode) document.body.removeChild(script);
+      reject(new Error('network'));
+    };
     document.body.appendChild(script);
   });
 }
 
-/* ── 데이터 로드 ── */
 async function loadEvents(){
   setSyncStatus('syncing','불러오는 중...');
   try{
@@ -267,7 +264,6 @@ async function loadEvents(){
   render();
 }
 
-/* ── 렌더링 ── */
 function render(){updateStatusBar();if(view==='month')renderMonth();else renderTeam();}
 
 function updateStatusBar(){
@@ -281,8 +277,10 @@ function updateStatusBar(){
 
 function fmtChip(ev){
   const c=CATS[ev.cat]||CATS.meeting;
+  const m=MEMBERS.find(x=>x.id===ev.member);
+  const memberDot=m?`<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${m.color};margin-right:3px;vertical-align:middle"></span>`:'';
   const timeStr=ev.stime?` ${ev.stime}`:'';
-  return `<div class="event-chip" style="background:${c.bg};color:${c.color};border-left:2px solid ${c.color}" onclick="event.stopPropagation();editEvent('${ev.id}')">${ev.title||c.label}${timeStr}</div>`;
+  return `<div class="event-chip" style="background:${c.bg};color:${c.color};border-left:2px solid ${c.color}" onclick="event.stopPropagation();editEvent('${ev.id}')">${memberDot}${ev.title||c.label}${timeStr}</div>`;
 }
 
 function renderMonth(){
@@ -300,8 +298,9 @@ function renderMonth(){
     else{day=i-firstDay+1;}
     const isToday=!isOther&&day===today.getDate()&&curYear===today.getFullYear()&&curMonth===today.getMonth();
     const ds=`${yr}-${String(mo+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-    const dayEvs=events.filter(e=>{const s=e.start,en=e.end||e.start;return ds>=s&&ds<=en;})
-      .sort((a,b)=>(a.stime||'')>(b.stime||'')?1:-1);
+    const dayEvs=events
+      .filter(e=>{ const s=e.start,en=e.end||e.start; return ds>=s&&ds<=en; })
+      .sort((a,b)=>(a.stime||'zzz')>(b.stime||'zzz')?1:-1);
     html+=`<div class="cal-day${isOther?' other-month':''}${isToday?' today':''}" onclick="dayClick('${ds}')">`;
     html+=`<div class="day-num">${day}</div>`;
     dayEvs.slice(0,3).forEach(ev=>{html+=fmtChip(ev);});
@@ -326,8 +325,11 @@ function renderTeam(){
       html+='<div class="tl-cell">';
       const wEvs=events.filter(ev=>{
         if(ev.member!==m.id)return false;
-        return w.some(d=>{const ds=`${curYear}-${String(curMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;return ds>=ev.start&&ds<=(ev.end||ev.start);});
-      }).sort((a,b)=>(a.stime||'')>(b.stime||'')?1:-1);
+        return w.some(d=>{
+          const ds=`${curYear}-${String(curMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+          return ds>=ev.start&&ds<=(ev.end||ev.start);
+        });
+      }).sort((a,b)=>(a.stime||'zzz')>(b.stime||'zzz')?1:-1);
       wEvs.slice(0,2).forEach(ev=>{
         const c=CATS[ev.cat]||CATS.meeting;
         const t=ev.stime?` ${ev.stime}`:'';
@@ -355,7 +357,9 @@ document.getElementById('prev-btn').onclick=()=>{if(--curMonth<0){curMonth=11;cu
 document.getElementById('next-btn').onclick=()=>{if(++curMonth>11){curMonth=0;curYear++;}updateTitle();render();};
 
 function populateMembers(sel){
-  document.getElementById('f-member').innerHTML=MEMBERS.map(m=>`<option value="${m.id}"${m.id===sel?' selected':''}>${m.name}</option>`).join('');
+  document.getElementById('f-member').innerHTML=MEMBERS.map(m=>
+    `<option value="${m.id}"${m.id===sel?' selected':''}>${m.name}</option>`
+  ).join('');
 }
 
 function openAddModal(ds){
@@ -411,7 +415,8 @@ async function saveEvent(){
   const etime=useTime?document.getElementById('f-etime').value:'';
   if(!title){alert('제목을 입력하세요');return;}
   if(!start){alert('날짜를 입력하세요');return;}
-  const id=editId||'ev_'+Date.now();
+  // 새 일정이면 고유 ID 생성, 수정이면 기존 ID 유지
+  const id = editId || genId();
   const params={action:'save',id,title,cat,start,end,member,memo,stime,etime};
   document.getElementById('save-btn').disabled=true;
   document.getElementById('loading-overlay').classList.add('open');
@@ -419,8 +424,12 @@ async function saveEvent(){
   try{
     await apiCall(params);
     const obj={...params};
-    if(editId){const idx=events.findIndex(e=>e.id===editId);if(idx>=0)events[idx]=obj;}
-    else{events.push(obj);}
+    if(editId){
+      const idx=events.findIndex(e=>e.id===editId);
+      if(idx>=0) events[idx]=obj;
+    } else {
+      events.push(obj);
+    }
     setSyncStatus('ok','저장됨');
     closeModal();
     render();
@@ -453,12 +462,12 @@ async function deleteEvent(){
 document.getElementById('f-start').addEventListener('change',()=>{
   const s=document.getElementById('f-start').value;
   const e=document.getElementById('f-end').value;
-  if(!e||e<s)document.getElementById('f-end').value=s;
+  if(!e||e<s) document.getElementById('f-end').value=s;
 });
 
 updateTitle();
 loadEvents();
-setInterval(loadEvents,60000);
+setInterval(loadEvents, 60000);
 </script>
 </body>
 </html>
