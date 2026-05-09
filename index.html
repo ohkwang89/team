@@ -27,8 +27,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Malgun Gothic','맑은 고딕
 .status-bar{display:flex;gap:16px;margin-bottom:12px;padding:10px 16px;background:#fff;border-radius:10px;border:1px solid #e8e8e8;flex-wrap:wrap;align-items:center}
 .stat-item{font-size:12px;color:#888}
 .stat-item span{font-weight:600;color:#1a1a1a}
-.sync-status{margin-left:auto;font-size:11px;color:#aaa;display:flex;align-items:center;gap:4px}
-.sync-dot{width:6px;height:6px;border-radius:50%;background:#ccc}
+.sync-status{margin-left:auto;font-size:11px;color:#aaa;display:flex;align-items:center;gap:4px;cursor:pointer}
+.sync-status:hover{color:#555}
+.sync-dot{width:6px;height:6px;border-radius:50%;background:#ccc;flex-shrink:0}
 .sync-dot.ok{background:#1D9E75}
 .sync-dot.syncing{background:#BA7517;animation:pulse 1s infinite}
 .sync-dot.error{background:#E24B4A}
@@ -130,12 +131,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Malgun Gothic','맑은 고딕
     <div class="stat-item" id="stat-vacation">휴가/연차 <span>0건</span></div>
     <div class="stat-item" id="stat-trip">출장 <span>0건</span></div>
     <div class="stat-item" id="stat-meeting">미팅/회의 <span>0건</span></div>
-    <div class="sync-status"><div class="sync-dot" id="sync-dot"></div><span id="sync-text">불러오는 중...</span></div>
+    <div class="sync-status" onclick="loadEvents()" title="클릭하면 수동 새로고침">
+      <div class="sync-dot" id="sync-dot"></div>
+      <span id="sync-text">불러오는 중...</span>
+    </div>
   </div>
 
   <div id="cal-view"></div>
   <div id="team-view" style="display:none"></div>
-  <div class="notice">🔗 이 URL을 팀원들에게 공유하면 모두 같은 일정을 볼 수 있습니다. 일정은 Google Sheets에 실시간 저장됩니다.</div>
+  <div class="notice">🔗 이 URL을 팀원들에게 공유하면 모두 같은 일정을 볼 수 있습니다 · 동기화 상태 클릭 시 수동 새로고침</div>
 </div>
 
 <div class="modal-overlay" id="modal-overlay" onclick="closeModal()">
@@ -182,6 +186,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Malgun Gothic','맑은 고딕
 
 <script>
 const API_URL = 'https://script.google.com/macros/s/AKfycbxK2E9D8L4JCcKtV2Vb6SCVt3IWvb65WdGco-Q_Fe2HTpQpelSlqAxE_4EXKHe6xfmgxA/exec';
+const CACHE_KEY = 'teamcal_events_v2';
 
 const MEMBERS = [
   {name:'김지원', color:'#534AB7', bg:'#EEEDFE', id:'m1'},
@@ -202,9 +207,19 @@ const MONTHS=['1월','2월','3월','4월','5월','6월','7월','8월','9월','10
 let curYear=new Date().getFullYear(), curMonth=new Date().getMonth();
 let events=[], editId=null, view='month';
 
-// 절대 겹치지 않는 고유 ID 생성
+/* ── 로컬 캐시 ── */
+function saveCache(data){
+  try{ localStorage.setItem(CACHE_KEY, JSON.stringify(data)); }catch(e){}
+}
+function loadCache(){
+  try{
+    const raw=localStorage.getItem(CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){ return null; }
+}
+
 function genId(){
-  return 'ev_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+  return 'ev_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
 }
 
 function toggleTime(){
@@ -251,15 +266,22 @@ function apiCall(params){
   });
 }
 
+/* ── 핵심 수정: 실패해도 기존 데이터 유지 ── */
 async function loadEvents(){
-  setSyncStatus('syncing','불러오는 중...');
+  setSyncStatus('syncing','동기화 중...');
   try{
     const data=await apiCall({action:'load'});
-    events=Array.isArray(data)?data:[];
-    setSyncStatus('ok','동기화됨');
+    if(Array.isArray(data) && data.length >= 0){
+      // 성공 시에만 events 교체 + 캐시 저장
+      events=data;
+      saveCache(data);
+      setSyncStatus('ok','동기화됨');
+    } else {
+      throw new Error('invalid data');
+    }
   }catch(e){
-    setSyncStatus('error','연결 오류 — 새로고침 해보세요');
-    events=[];
+    // 실패 시 기존 events 그대로 유지 (화면 안 지워짐)
+    setSyncStatus('error','연결 오류 (기존 데이터 표시 중)');
   }
   render();
 }
@@ -278,9 +300,9 @@ function updateStatusBar(){
 function fmtChip(ev){
   const c=CATS[ev.cat]||CATS.meeting;
   const m=MEMBERS.find(x=>x.id===ev.member);
-  const memberDot=m?`<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${m.color};margin-right:3px;vertical-align:middle"></span>`:'';
+  const dot=m?`<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${m.color};margin-right:3px;vertical-align:middle;flex-shrink:0"></span>`:'';
   const timeStr=ev.stime?` ${ev.stime}`:'';
-  return `<div class="event-chip" style="background:${c.bg};color:${c.color};border-left:2px solid ${c.color}" onclick="event.stopPropagation();editEvent('${ev.id}')">${memberDot}${ev.title||c.label}${timeStr}</div>`;
+  return `<div class="event-chip" style="background:${c.bg};color:${c.color};border-left:2px solid ${c.color}" onclick="event.stopPropagation();editEvent('${ev.id}')">${dot}${ev.title||c.label}${timeStr}</div>`;
 }
 
 function renderMonth(){
@@ -299,7 +321,7 @@ function renderMonth(){
     const isToday=!isOther&&day===today.getDate()&&curYear===today.getFullYear()&&curMonth===today.getMonth();
     const ds=`${yr}-${String(mo+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     const dayEvs=events
-      .filter(e=>{ const s=e.start,en=e.end||e.start; return ds>=s&&ds<=en; })
+      .filter(e=>{const s=e.start,en=e.end||e.start;return ds>=s&&ds<=en;})
       .sort((a,b)=>(a.stime||'zzz')>(b.stime||'zzz')?1:-1);
     html+=`<div class="cal-day${isOther?' other-month':''}${isToday?' today':''}" onclick="dayClick('${ds}')">`;
     html+=`<div class="day-num">${day}</div>`;
@@ -415,8 +437,7 @@ async function saveEvent(){
   const etime=useTime?document.getElementById('f-etime').value:'';
   if(!title){alert('제목을 입력하세요');return;}
   if(!start){alert('날짜를 입력하세요');return;}
-  // 새 일정이면 고유 ID 생성, 수정이면 기존 ID 유지
-  const id = editId || genId();
+  const id=editId||genId();
   const params={action:'save',id,title,cat,start,end,member,memo,stime,etime};
   document.getElementById('save-btn').disabled=true;
   document.getElementById('loading-overlay').classList.add('open');
@@ -430,6 +451,7 @@ async function saveEvent(){
     } else {
       events.push(obj);
     }
+    saveCache(events); // 저장 즉시 캐시 업데이트
     setSyncStatus('ok','저장됨');
     closeModal();
     render();
@@ -449,6 +471,7 @@ async function deleteEvent(){
   try{
     await apiCall({action:'delete',id:editId});
     events=events.filter(e=>e.id!==editId);
+    saveCache(events); // 삭제 즉시 캐시 업데이트
     setSyncStatus('ok','삭제됨');
   }catch(e){
     setSyncStatus('error','삭제 실패');
@@ -465,9 +488,18 @@ document.getElementById('f-start').addEventListener('change',()=>{
   if(!e||e<s) document.getElementById('f-end').value=s;
 });
 
+// 초기화: 캐시 먼저 표시 → 서버에서 최신 데이터 로드
 updateTitle();
+const cached=loadCache();
+if(cached && cached.length > 0){
+  events=cached;
+  render();
+  setSyncStatus('syncing','서버 동기화 중...');
+}
 loadEvents();
-setInterval(loadEvents, 60000);
+
+// 3분마다 자동 동기화 (실패해도 기존 데이터 유지)
+setInterval(loadEvents, 180000);
 </script>
 </body>
 </html>
